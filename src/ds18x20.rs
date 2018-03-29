@@ -14,8 +14,12 @@ pub enum DS18x20Devices {
 }
 
 pub trait DS18x20 {
+    ///starts the temperature measurement, returns the time in milliseconds 
+    ///required to wait before reading back the result.
     fn start_temperature_measurement(&mut self, rom: &[u8; 8]) -> Result<u16, PortErrors>;
-    fn read_temperature_measurement_result(&mut self, rom: &[u8; 8]) -> Result<u16, PortErrors>;
+
+    ///returns the temperature in 1/16 celsius
+    fn read_temperature_measurement_result(&mut self, rom: &[u8; 8]) -> Result<i16, PortErrors>;
 }
 
 pub fn detect_18x20_devices(factory_code: u8) -> Option<DS18x20Devices> {
@@ -47,7 +51,7 @@ impl<T: OneWire> DS18x20 for T {
         Ok(800) //TODO may shorten this if lower bit resolution was chosen.
     }
 
-    fn read_temperature_measurement_result(&mut self, rom: &[u8; 8]) -> Result<u16, PortErrors> {
+    fn read_temperature_measurement_result(&mut self, rom: &[u8; 8]) -> Result<i16, PortErrors> {
         //with parasite power OFF
         //self.strong_pullup(false);
 
@@ -85,8 +89,8 @@ impl<T: OneWire> DS18x20 for T {
                     _ => !0,     // default is 12 bit resolution, 750 ms conversion time
                 }
             }
-
-            Ok(rawtemp) //celsius = rawtemp/16.0
+            
+            Ok(rawtemp as i16) //celsius = rawtemp/16.0
         } else {
             Err(PortErrors::CRCMismatch)
         }

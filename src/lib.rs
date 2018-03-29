@@ -4,6 +4,7 @@ extern crate embedded_hal as hal;
 //extern crate cortex_m;
 
 pub mod ds18x20;
+pub mod iopin;
 
 use hal::digital::{OutputPin, InputPin};
 use hal::blocking::delay::{DelayUs};
@@ -106,18 +107,14 @@ pub trait OneWire {
     fn iterate_next<'a>(&mut self, normal_search_mode: bool, it: &'a mut RomIterator) -> Result<Option<&'a Rom>, PortErrors>;
 }
 
-/// A 1-Wire porotocol bit banging implementation
-pub struct OneWirePort<OPIN, IPIN, DELAY>
+pub struct OneWirePort<IOPIN, DELAY>
 where
-    OPIN: OutputPin,//in opendrain mode
-    IPIN: InputPin,//in opendrain mode the pin also acts as floating input
+    IOPIN: InputPin + OutputPin,//in opendrain mode the pin also acts as input
     DELAY: DelayUs<u16>
 {
     /// an external 4.7k pullup resistor is needed on this pin
-    output: OPIN,  
-    input: IPIN,
+    io: IOPIN,  
     delay: DELAY
-
     //TODO add support for a strong pullup pin
 }
 
@@ -136,20 +133,16 @@ where
 
 const DELAY_CALIBRATION : u16 = 3u16;
 
-impl<OPIN, IPIN, DELAY> OneWirePort<OPIN, IPIN, DELAY>
+impl<IOPIN, DELAY> OneWirePort<IOPIN, DELAY>
 where
-    OPIN: OutputPin,
-    IPIN: InputPin,
+    IOPIN: InputPin + OutputPin,
     DELAY: DelayUs<u16>
 {
-    /// Creates a new `Motor`
-    pub fn new(mut output: OPIN, input: IPIN, delay: DELAY) -> Self {
-        // initial state: hi
-        //TODO pin.into_open_drain();
-        output.set_high();
+    pub fn new(mut io: IOPIN, delay: DELAY) -> Self {
+        // initial output state: hi
+        io.set_high();
         OneWirePort {
-            output: output,
-            input: input,
+            io: io,
             delay: delay,
         }
     }
@@ -160,17 +153,17 @@ where
         if data {
             //short low pulse = 1
             atomic(|| {
-                self.output.set_low();
+                self.io.set_low();
                 self.delay.delay_us(9u16 - DELAY_CALIBRATION);
-                self.output.set_high();
+                self.io.set_high();
             });
             self.delay.delay_us(80u16 - 9u16 - DELAY_CALIBRATION);
         } else {
             //long low pulse = 0
             atomic(|| {
-                self.output.set_low();
+                self.io.set_low();
                 self.delay.delay_us(60u16 - DELAY_CALIBRATION);
-                self.output.set_high();
+                self.io.set_high();
             });
             self.delay.delay_us(80u16 - 60u16 - DELAY_CALIBRATION);
         }
@@ -183,13 +176,13 @@ where
             let result = 
             atomic(|| {
                 //send out a short low pulse
-                self.output.set_low();
+                self.io.set_low();
                 self.delay.delay_us(9u16 - DELAY_CALIBRATION);
-                self.output.set_high();
+                self.io.set_high();
                 self.delay.delay_us(9u16 - DELAY_CALIBRATION);//6?
 
                 //then sample the port if a slave keeps it pulled down at 15us
-                self.input.is_high()
+                self.io.is_high()
             });
 
             self.delay.delay_us(80u16 - 9u16 - 9u16 - DELAY_CALIBRATION);
@@ -198,37 +191,36 @@ where
     }
 }
 
-impl<OPIN, IPIN, DELAY> OneWire for OneWirePort<OPIN, IPIN, DELAY>
+impl<IOPIN, DELAY> OneWire for OneWirePort<IOPIN, DELAY>
 where
-    OPIN: OutputPin,//in opendrain mode
-    IPIN: InputPin,//in opendrain mode
+    IOPIN: InputPin + OutputPin,
     DELAY: DelayUs<u16>,
 {
     fn reset(&mut self) -> Result<(), PortErrors> {
         //test few times if the wire is high... just in case
-        let mut retry = 125;
+        let mut retry = 128;
         loop {
             retry -= 1;
             if retry == 0 {
                 return Err(PortErrors::ShortDetected);
             }
-            if self.input.is_high() {
+            if self.io.is_high() {
                 break;
             }
-            self.delay.delay_us(2u16 - DELAY_CALIBRATION);
+            self.delay.delay_us(1u16);
         }
 
         //TODO instead of delay_ticks read the counter first then wait until relative positions
         let device_present = {
             //long (480..640us) low reset pulse:
-            self.output.set_low();
+            self.io.set_low();
             self.delay.delay_us(480u16 - DELAY_CALIBRATION);
             atomic(|| {
-                self.output.set_high();
+                self.io.set_high();
                 //wait 15..60us - external pullup brings the line high 
                 //then sample the line if any device pulls it down to show its presence
                 self.delay.delay_us(72u16 - DELAY_CALIBRATION);
-                self.input.is_low()
+                self.io.is_low()
             })
         };
 

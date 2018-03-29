@@ -1,6 +1,6 @@
 [package]
 name = "onewire"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Tibor Prokai <pro@sch.bme.hu>"]
 repository = "https://github.com/tib888/onewire"
 description = "1-wire implementation using for embedded_hal"
@@ -12,7 +12,8 @@ license = "MIT"
 
 [dependencies.embedded-hal]
 features = ["unproven"]
-version = "0.1.2"
+git = "https://github.com/tib888/embedded-hal"
+#version = "0.1.2"
 
 #[dependencies.cortex-m]
 #version = "0.4.3"
