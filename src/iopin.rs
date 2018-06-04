@@ -33,14 +33,6 @@ where
     OPIN: OutputPin,
     IPIN: InputPin,
 {
-    fn is_set_high(&self) -> bool {
-        self.output.is_set_high()
-    }
-
-    fn is_set_low(&self) -> bool {
-        self.output.is_set_low()
-    }
-
     fn set_high(&mut self) {
         self.output.set_high();
     }
