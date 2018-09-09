@@ -3,9 +3,22 @@
 #![deny(unsafe_code)]
 //#![deny(warnings)]
 
+use calculate_crc;
 use OneWire;
 use PortErrors;
-use calculate_crc;
+
+/// temperature in 1/16 Celsius
+pub struct Temperature(i16);
+
+impl Temperature {
+    pub fn from_celsius(degree: i16, degree_div_16: i16) -> Temperature {
+        Temperature((degree << 4) | degree_div_16)
+    }
+
+    fn raw(degree_div_16: i16) -> Temperature {
+        Temperature(degree_div_16)
+    }
+}
 
 pub enum DS18x20Devices {
     DS18S20, // or old DS1820
@@ -14,17 +27,20 @@ pub enum DS18x20Devices {
 }
 
 pub trait DS18x20 {
-    ///starts the temperature measurement, returns the time in milliseconds 
+    ///starts the temperature measurement, returns the time in milliseconds
     ///required to wait before reading back the result.
     fn start_temperature_measurement(&mut self, rom: &[u8; 8]) -> Result<u16, PortErrors>;
 
     ///returns the temperature in 1/16 celsius
-    fn read_temperature_measurement_result(&mut self, rom: &[u8; 8]) -> Result<i16, PortErrors>;
+    fn read_temperature_measurement_result(
+        &mut self,
+        rom: &[u8; 8],
+    ) -> Result<Temperature, PortErrors>;
 }
 
 pub fn detect_18x20_devices(factory_code: u8) -> Option<DS18x20Devices> {
     match factory_code {
-        0x10 => Some(DS18x20Devices::DS18S20),  // or old DS1820
+        0x10 => Some(DS18x20Devices::DS18S20), // or old DS1820
         0x28 => Some(DS18x20Devices::DS18B20),
         0x22 => Some(DS18x20Devices::DS1822),
         _ => None,
@@ -35,7 +51,6 @@ impl<T: OneWire> DS18x20 for T {
     /// Measure the temperature with 18x20, returns temp in celsius * 16
     /// returs the time in ms required for conversion
     fn start_temperature_measurement(&mut self, rom: &[u8; 8]) -> Result<u16, PortErrors> {
-        
         if let Err(error) = self.reset() {
             return Err(error);
         }
@@ -51,7 +66,10 @@ impl<T: OneWire> DS18x20 for T {
         Ok(800) //TODO may shorten this if lower bit resolution was chosen.
     }
 
-    fn read_temperature_measurement_result(&mut self, rom: &[u8; 8]) -> Result<i16, PortErrors> {
+    fn read_temperature_measurement_result(
+        &mut self,
+        rom: &[u8; 8],
+    ) -> Result<Temperature, PortErrors> {
         //with parasite power OFF
         //self.strong_pullup(false);
 
@@ -73,9 +91,9 @@ impl<T: OneWire> DS18x20 for T {
             if rom[0] == 0x10 {
                 //DS18S20 or old DS1820
                 rawtemp <<= 3; // 9 bit resolution default
-                //[7] = count per celsius
-                //[6] = remaining count
-                //t = temp_read - 0.25 + (count_pre_celsius-remaining_count)/count_pre_celsius
+                               //[7] = count per celsius
+                               //[6] = remaining count
+                               //t = temp_read - 0.25 + (count_pre_celsius-remaining_count)/count_pre_celsius
                 if scratchpad[7] == 0x10 {
                     // "count remain" gives full 12 bit resolution
                     rawtemp = (rawtemp & 0xFFF0) - 4u16 + 16u16 - (scratchpad[6] as u16);
@@ -83,14 +101,14 @@ impl<T: OneWire> DS18x20 for T {
             } else {
                 // at lower res, the low bits are undefined, so let's zero them
                 rawtemp &= match scratchpad[4] & 0x60 {
-                    0x00 => !7,  // 9 bit resolution, 93.75 ms
-                    0x20 => !3,  // 10 bit res, 187.5 ms
-                    0x40 => !1,  // 11 bit res, 375 ms
-                    _ => !0,     // default is 12 bit resolution, 750 ms conversion time
+                    0x00 => !7, // 9 bit resolution, 93.75 ms
+                    0x20 => !3, // 10 bit res, 187.5 ms
+                    0x40 => !1, // 11 bit res, 375 ms
+                    _ => !0,    // default is 12 bit resolution, 750 ms conversion time
                 }
             }
-            
-            Ok(rawtemp as i16) //celsius = rawtemp/16.0
+
+            Ok(Temperature::raw(rawtemp as i16)) //celsius = rawtemp/16.0
         } else {
             Err(PortErrors::CRCMismatch)
         }

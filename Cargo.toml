@@ -1,6 +1,6 @@
 [package]
 name = "onewire"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Tibor Prokai <pro@sch.bme.hu>"]
 repository = "https://github.com/tib888/onewire"
 description = "1-wire implementation using for embedded_hal"
