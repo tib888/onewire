@@ -10,7 +10,7 @@ use OneWire;
 use PortErrors;
 
 /// temperature in 1/16 Celsius
-#[derive(PartialOrd, PartialEq, Eq, Ord)]
+#[derive(Copy, Clone, Debug, PartialOrd, PartialEq, Eq, Ord)]
 pub struct Temperature(i16);
 
 impl Temperature {
