@@ -125,7 +125,7 @@ impl<T: OneWire> DS18x20 for T {
                 }
             }
 
-            Ok(Temperature::raw(rawtemp as i16)) //celsius = rawtemp/16.0
+            Ok(Temperature::from_raw(rawtemp as i16)) //celsius = rawtemp/16.0
         } else {
             Err(PortErrors::CRCMismatch)
         }
