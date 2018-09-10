@@ -4,38 +4,9 @@
 //#![deny(warnings)]
 
 use calculate_crc;
-use core::ops::Add;
-use core::ops::Sub;
+use temperature::Temperature;
 use OneWire;
 use PortErrors;
-
-/// temperature in 1/16 Celsius
-#[derive(Copy, Clone, Debug, PartialOrd, PartialEq, Eq, Ord)]
-pub struct Temperature(i16);
-
-impl Temperature {
-    pub fn from_celsius(degree: i16, degree_div_16: i16) -> Temperature {
-        Temperature((degree << 4) | degree_div_16)
-    }
-
-    fn from_raw(degree_div_16: i16) -> Temperature {
-        Temperature(degree_div_16)
-    }
-}
-
-impl Add for Temperature {
-    type Output = Temperature;
-    fn add(self, rhs: Self) -> Temperature {
-        Temperature(self.0 + rhs.0)
-    }
-}
-
-impl Sub for Temperature {
-    type Output = Temperature;
-    fn sub(self, rhs: Self) -> Temperature {
-        Temperature(self.0 - rhs.0)
-    }
-}
 
 pub enum DS18x20Devices {
     DS18S20, // or old DS1820
@@ -125,7 +96,7 @@ impl<T: OneWire> DS18x20 for T {
                 }
             }
 
-            Ok(Temperature::from_raw(rawtemp as i16)) //celsius = rawtemp/16.0
+            Ok(Temperature::from(rawtemp as i16)) //celsius = rawtemp/16.0
         } else {
             Err(PortErrors::CRCMismatch)
         }

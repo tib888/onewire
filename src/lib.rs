@@ -5,19 +5,20 @@ extern crate embedded_hal as hal;
 
 pub mod ds18x20;
 pub mod iopin;
+pub mod temperature;
 
-use hal::digital::{OutputPin, InputPin};
-use hal::blocking::delay::{DelayUs};
+use hal::blocking::delay::DelayUs;
+use hal::digital::{InputPin, OutputPin};
 //use cortex_m::interrupt::{self};
 
 ///generic 1-wire API:
 
 #[derive(Debug)]
 pub enum PortErrors {
-    ShortDetected,          //line stays low - probably pullup resistor missing
-    NoPresencePulseDetect,  //no devices detected at reset
-    NoDevices,              //rom enumeration does not see any devices
-    CRCMismatch,            //crc check fails
+    ShortDetected,         //line stays low - probably pullup resistor missing
+    NoPresencePulseDetect, //no devices detected at reset
+    NoDevices,             //rom enumeration does not see any devices
+    CRCMismatch,           //crc check fails
 }
 
 pub type Rom = [u8; 8];
@@ -75,7 +76,7 @@ pub trait OneWire {
     fn reset(&mut self) -> Result<(), PortErrors>;
     fn send_byte(&mut self, data: u8);
     fn request_byte(&mut self) -> u8;
-    
+
     fn send_many(&mut self, data: &[u8]) {
         for d in data {
             self.send_byte(*d);
@@ -92,7 +93,7 @@ pub trait OneWire {
     /// Do a ROM select
     fn select(&mut self, rom: &Rom) {
         // Choose ROM
-        self.send_byte(0x55);        
+        self.send_byte(0x55);
         self.send_many(&rom[..]);
     }
 
@@ -104,18 +105,21 @@ pub trait OneWire {
 
     /// Perform the 1-Wire search algorithm on the 1-Wire bus using the iterator state
     /// normal_search_mode : true = normal search, false = alarm/conditional
-    fn iterate_next<'a>(&mut self, normal_search_mode: bool, it: &'a mut RomIterator) -> Result<Option<&'a Rom>, PortErrors>;
+    fn iterate_next<'a>(
+        &mut self,
+        normal_search_mode: bool,
+        it: &'a mut RomIterator,
+    ) -> Result<Option<&'a Rom>, PortErrors>;
 }
 
 pub struct OneWirePort<IOPIN, DELAY>
 where
-    IOPIN: InputPin + OutputPin,//in opendrain mode the pin also acts as input
-    DELAY: DelayUs<u16>
+    IOPIN: InputPin + OutputPin, //in opendrain mode the pin also acts as input
+    DELAY: DelayUs<u16>,
 {
     /// an external 4.7k pullup resistor is needed on this pin
-    io: IOPIN,  
-    delay: DELAY
-    //TODO add support for a strong pullup pin
+    io: IOPIN,
+    delay: DELAY, //TODO add support for a strong pullup pin
 }
 
 /// Executes the closure `f` in a preemption free context
@@ -131,12 +135,12 @@ where
     r
 }
 
-const DELAY_CALIBRATION : u16 = 3u16;
+const DELAY_CALIBRATION: u16 = 3u16;
 
 impl<IOPIN, DELAY> OneWirePort<IOPIN, DELAY>
 where
     IOPIN: InputPin + OutputPin,
-    DELAY: DelayUs<u16>
+    DELAY: DelayUs<u16>,
 {
     pub fn new(mut io: IOPIN, delay: DELAY) -> Self {
         // initial output state: hi
@@ -149,7 +153,7 @@ where
 
     fn send_bit(&mut self, data: bool) {
         //the slave will sample the line 15..60us from the initial falling edge
-        //TODO instead of delay_ticks read the counter first then wait until relative positions     
+        //TODO instead of delay_ticks read the counter first then wait until relative positions
         if data {
             //short low pulse = 1
             atomic(|| {
@@ -173,13 +177,12 @@ where
         //the master will sample the line 15us from the initial falling edge
         //TODO instead of delay_ticks read the counter first then wait until relative positions
         {
-            let result = 
-            atomic(|| {
+            let result = atomic(|| {
                 //send out a short low pulse
                 self.io.set_low();
                 self.delay.delay_us(9u16 - DELAY_CALIBRATION);
                 self.io.set_high();
-                self.delay.delay_us(9u16 - DELAY_CALIBRATION);//6?
+                self.delay.delay_us(9u16 - DELAY_CALIBRATION); //6?
 
                 //then sample the port if a slave keeps it pulled down at 15us
                 self.io.is_high()
@@ -217,7 +220,7 @@ where
             self.delay.delay_us(480u16 - DELAY_CALIBRATION);
             atomic(|| {
                 self.io.set_high();
-                //wait 15..60us - external pullup brings the line high 
+                //wait 15..60us - external pullup brings the line high
                 //then sample the line if any device pulls it down to show its presence
                 self.delay.delay_us(72u16 - DELAY_CALIBRATION);
                 self.io.is_low()
@@ -251,7 +254,11 @@ where
         result
     }
 
-    fn iterate_next<'a>(&mut self, normal_search_mode: bool, it: &'a mut RomIterator) -> Result<Option<&'a Rom>, PortErrors> {
+    fn iterate_next<'a>(
+        &mut self,
+        normal_search_mode: bool,
+        it: &'a mut RomIterator,
+    ) -> Result<Option<&'a Rom>, PortErrors> {
         if let Err(error) = self.reset() {
             return Err(error);
         } else {
@@ -292,7 +299,7 @@ where
                         };
 
                         // if 0 was picked then record its position in LastZero
-                        if !dir { 
+                        if !dir {
                             last_zero = id_bit_number;
 
                             // check for Last discrepancy in family
@@ -334,7 +341,7 @@ where
 
                         // if the search was successful then
                         return Ok(Some(&it.rom));
-                    }                    
+                    }
                 }
             }
         }
