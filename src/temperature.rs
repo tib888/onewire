@@ -7,8 +7,20 @@ use core::ops::Sub;
 pub struct Temperature(i16);
 
 impl Temperature {
-    pub fn from_celsius(degree: i16, degree_div_16: i16) -> Self {
-        Temperature((degree << 4) | degree_div_16)
+    pub fn from_celsius(degrees: i16, degrees_div_16: i16) -> Self {
+        Temperature((degrees << 4) | degrees_div_16)
+    }
+
+    pub fn whole_degrees(&self) -> i16 {
+        self.0 >> 4
+    }
+
+    pub fn fraction_degrees(&self) -> i16 {
+        if self.0 >= 0 {
+            self.0 & 0xF
+        } else {
+            (-self.0) & 0xF
+        }
     }
 }
 
