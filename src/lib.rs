@@ -151,6 +151,10 @@ where
         }
     }
 
+    pub fn split(self) -> (IOPIN, DELAY) {
+        (self.io, self.delay)
+    }
+
     fn send_bit(&mut self, data: bool) {
         //the slave will sample the line 15..60us from the initial falling edge
         //TODO instead of delay_ticks read the counter first then wait until relative positions
