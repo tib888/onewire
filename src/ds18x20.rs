@@ -3,10 +3,10 @@
 #![deny(unsafe_code)]
 //#![deny(warnings)]
 
-use calculate_crc;
-use temperature::Temperature;
-use OneWire;
-use PortErrors;
+use crate::calculate_crc;
+use crate::temperature::Temperature;
+use crate::OneWire;
+use crate::PortErrors;
 
 pub enum DS18x20Devices {
     DS18S20, // or old DS1820

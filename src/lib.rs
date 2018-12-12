@@ -7,8 +7,8 @@ pub mod ds18x20;
 pub mod iopin;
 pub mod temperature;
 
-use hal::blocking::delay::DelayUs;
-use hal::digital::{InputPin, OutputPin};
+use crate::hal::blocking::delay::DelayUs;
+use crate::hal::digital::{InputPin, OutputPin};
 //use cortex_m::interrupt::{self};
 
 ///generic 1-wire API:

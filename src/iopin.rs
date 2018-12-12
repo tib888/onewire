@@ -3,7 +3,7 @@
 #![deny(unsafe_code)]
 #![deny(warnings)]
 
-use hal::digital::{InputPin, OutputPin};
+use crate::hal::digital::{InputPin, OutputPin};
 
 pub struct IOPin<OPIN, IPIN>
 where
