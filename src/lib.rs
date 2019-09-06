@@ -1,15 +1,11 @@
 #![no_std]
 
-extern crate embedded_hal as hal;
-//extern crate cortex_m;
-
 pub mod ds18x20;
 pub mod iopin;
 pub mod temperature;
 
-use hal::blocking::delay::DelayUs;
-use hal::digital::v2::{InputPin, OutputPin};
-//use cortex_m::interrupt::{self};
+use embedded_hal::blocking::delay::DelayUs;
+use embedded_hal::digital::v2::{InputPin, OutputPin};
 
 ///generic 1-wire API:
 
