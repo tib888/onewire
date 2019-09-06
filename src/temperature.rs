@@ -8,13 +8,19 @@ pub struct Temperature(i16);
 
 impl Temperature {
     pub fn from_celsius(degrees: i16, degrees_div_16: i16) -> Self {
-        Temperature((degrees << 4) | degrees_div_16)
+        Temperature(degrees * 16 + degrees_div_16)
     }
 
-    pub fn whole_degrees(&self) -> i16 {
-        self.0 >> 4
+    pub fn is_negative(&self) -> bool {
+        self.0 < 0i16
     }
 
+    ///ignores the sign
+    pub fn whole_degrees(&self) -> u16 {
+        (self.0.abs() >> 4) as u16
+    }
+
+    ///ignores the sign
     pub fn fraction_degrees(&self) -> u8 {
         (self.0.abs() & 0xF) as u8
     }
