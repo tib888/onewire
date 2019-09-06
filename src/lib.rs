@@ -8,7 +8,7 @@ pub mod iopin;
 pub mod temperature;
 
 use hal::blocking::delay::DelayUs;
-use hal::digital::{InputPin, OutputPin};
+use hal::digital::v2::{InputPin, OutputPin};
 //use cortex_m::interrupt::{self};
 
 ///generic 1-wire API:
@@ -19,6 +19,8 @@ pub enum PortErrors {
     NoPresencePulseDetect, //no devices detected at reset
     NoDevices,             //rom enumeration does not see any devices
     CRCMismatch,           //crc check fails
+    InputPinError,
+    OutputPinError,
 }
 
 pub type Rom = [u8; 8];
@@ -74,33 +76,35 @@ pub fn calculate_crc(buffer: &[u8]) -> u8 {
 
 pub trait OneWire {
     fn reset(&mut self) -> Result<(), PortErrors>;
-    fn send_byte(&mut self, data: u8);
-    fn request_byte(&mut self) -> u8;
+    fn send_byte(&mut self, data: u8) -> Result<(), PortErrors>;
+    fn request_byte(&mut self) -> Result<u8, PortErrors>;
 
-    fn send_many(&mut self, data: &[u8]) {
+    fn send_many(&mut self, data: &[u8]) -> Result<(), PortErrors> {
         for d in data {
-            self.send_byte(*d);
+            self.send_byte(*d)?;
         }
+        Ok(())
     }
 
     /// fills the buffer with bytes coming on the 1 wire bus
-    fn request_many(&mut self, buffer: &mut [u8]) {
+    fn request_many(&mut self, buffer: &mut [u8]) -> Result<(), PortErrors> {
         for d in buffer.iter_mut() {
-            *d = self.request_byte();
+            *d = self.request_byte()?;
         }
+        Ok(())
     }
 
     /// Do a ROM select
-    fn select(&mut self, rom: &Rom) {
+    fn select(&mut self, rom: &Rom) -> Result<(), PortErrors> {
         // Choose ROM
-        self.send_byte(0x55);
-        self.send_many(&rom[..]);
+        self.send_byte(0x55)?;
+        self.send_many(&rom[..])
     }
 
     /// Do a ROM skip
-    fn skip(&mut self) {
+    fn skip(&mut self) -> Result<(), PortErrors> {
         // Skip ROM
-        self.send_byte(0xCC);
+        self.send_byte(0xCC)
     }
 
     /// Perform the 1-Wire search algorithm on the 1-Wire bus using the iterator state
@@ -142,58 +146,63 @@ where
     IOPIN: InputPin + OutputPin,
     DELAY: DelayUs<u16>,
 {
-    pub fn new(mut io: IOPIN, delay: DELAY) -> Self {
+    pub fn new(mut io: IOPIN, delay: DELAY) -> Result<Self, PortErrors> {
         // initial output state: hi
-        io.set_high();
-        OneWirePort {
+        io.set_high().map_err(|_| PortErrors::OutputPinError)?;
+
+        Ok(OneWirePort {
             io: io,
             delay: delay,
-        }
+        })
     }
 
     pub fn split(self) -> (IOPIN, DELAY) {
         (self.io, self.delay)
     }
 
-    fn send_bit(&mut self, data: bool) {
+    fn send_bit(&mut self, data: bool) -> Result<(), PortErrors> {
         //the slave will sample the line 15..60us from the initial falling edge
         //TODO instead of delay_ticks read the counter first then wait until relative positions
         if data {
             //short low pulse = 1
-            atomic(|| {
-                self.io.set_low();
+            atomic(|| -> Result<(), PortErrors> {
+                self.io.set_low().map_err(|_| PortErrors::OutputPinError)?;
                 self.delay.delay_us(9u16 - DELAY_CALIBRATION);
-                self.io.set_high();
-            });
-            self.delay.delay_us(80u16 - 9u16 - DELAY_CALIBRATION);
+                self.io.set_high().map_err(|_| PortErrors::OutputPinError)
+            }).and_then(|_| {
+                self.delay.delay_us(80u16 - 9u16 - DELAY_CALIBRATION);
+                Ok(())
+            })
         } else {
             //long low pulse = 0
-            atomic(|| {
-                self.io.set_low();
+            atomic(|| -> Result<(), PortErrors> {
+                self.io.set_low().map_err(|_| PortErrors::OutputPinError)?;
                 self.delay.delay_us(60u16 - DELAY_CALIBRATION);
-                self.io.set_high();
-            });
-            self.delay.delay_us(80u16 - 60u16 - DELAY_CALIBRATION);
+                self.io.set_high().map_err(|_| PortErrors::OutputPinError)
+            }).and_then(|_| {
+                self.delay.delay_us(80u16 - 60u16 - DELAY_CALIBRATION);
+                Ok(())
+            })
         }
     }
 
-    fn request_bit(&mut self) -> bool {
+    fn request_bit(&mut self) -> Result<bool, PortErrors> {
         //the master will sample the line 15us from the initial falling edge
         //TODO instead of delay_ticks read the counter first then wait until relative positions
         {
-            let result = atomic(|| {
+            atomic(|| -> Result<bool, PortErrors> {
                 //send out a short low pulse
-                self.io.set_low();
+                self.io.set_low().map_err(|_| PortErrors::OutputPinError)?;
                 self.delay.delay_us(9u16 - DELAY_CALIBRATION);
-                self.io.set_high();
+                self.io.set_high().map_err(|_| PortErrors::OutputPinError)?;
                 self.delay.delay_us(9u16 - DELAY_CALIBRATION); //6?
 
                 //then sample the port if a slave keeps it pulled down at 15us
-                self.io.is_high()
-            });
-
-            self.delay.delay_us(80u16 - 9u16 - 9u16 - DELAY_CALIBRATION);
-            result
+                self.io.is_high().map_err(|_| PortErrors::InputPinError)
+            }).and_then(|result| {
+                self.delay.delay_us(80u16 - 9u16 - 9u16 - DELAY_CALIBRATION);
+                Ok(result)
+            })
         }
     }
 }
@@ -211,7 +220,7 @@ where
             if retry == 0 {
                 return Err(PortErrors::ShortDetected);
             }
-            if self.io.is_high() {
+            if self.io.is_high().map_err(|_| PortErrors::InputPinError)? {
                 break;
             }
             self.delay.delay_us(1u16);
@@ -220,16 +229,16 @@ where
         //TODO instead of delay_ticks read the counter first then wait until relative positions
         let device_present = {
             //long (480..640us) low reset pulse:
-            self.io.set_low();
+            self.io.set_low().map_err(|_| PortErrors::InputPinError)?;
             self.delay.delay_us(480u16 - DELAY_CALIBRATION);
-            atomic(|| {
-                self.io.set_high();
+            atomic(|| -> Result<bool, PortErrors> {
+                self.io.set_high().map_err(|_| PortErrors::OutputPinError)?;
                 //wait 15..60us - external pullup brings the line high
                 //then sample the line if any device pulls it down to show its presence
                 self.delay.delay_us(72u16 - DELAY_CALIBRATION);
-                self.io.is_low()
+                self.io.is_low().map_err(|_| PortErrors::InputPinError)
             })
-        };
+        }?;
 
         //then wait for recovery at least 100..180us
         self.delay.delay_us(320u16 - DELAY_CALIBRATION);
@@ -242,20 +251,21 @@ where
         }
     }
 
-    fn send_byte(&mut self, data: u8) {
+    fn send_byte(&mut self, data: u8) -> Result<(), PortErrors> {
         for i in 0..8 {
-            self.send_bit(data & (1 << i) != 0);
+            self.send_bit(data & (1 << i) != 0)?;
         }
+        Ok(())
     }
 
-    fn request_byte(&mut self) -> u8 {
+    fn request_byte(&mut self) -> Result<u8, PortErrors> {
         let mut result: u8 = 0u8;
         for i in 0..8 {
-            if self.request_bit() {
+            if self.request_bit()? {
                 result |= 1 << i;
             }
         }
-        result
+        Ok(result)
     }
 
     fn iterate_next<'a>(
@@ -263,89 +273,87 @@ where
         normal_search_mode: bool,
         it: &'a mut RomIterator,
     ) -> Result<Option<&'a Rom>, PortErrors> {
-        if let Err(error) = self.reset() {
-            return Err(error);
-        } else {
-            if !it.last_device_flag {
-                let mut id_bit_number = 1;
-                let mut id_byte_number = 0;
-                let mut id_byte_mask = 1u8;
-                let mut last_zero = 0;
+        self.reset()?;
+            
+        if !it.last_device_flag {
+            let mut id_bit_number = 1;
+            let mut id_byte_number = 0;
+            let mut id_byte_mask = 1u8;
+            let mut last_zero = 0;
 
-                // issue the search command
-                if normal_search_mode {
-                    self.send_byte(0xF0); // NORMAL SEARCH
-                } else {
-                    self.send_byte(0xEC); // CONDITIONAL SEARCH
+            // issue the search command
+            if normal_search_mode {
+                self.send_byte(0xF0)?; // NORMAL SEARCH
+            } else {
+                self.send_byte(0xEC)?; // CONDITIONAL SEARCH
+            }
+
+            loop {
+                // read a bit and its complement
+                let id_bit = self.request_bit()?;
+                let cmp_id_bit = self.request_bit()?;
+
+                // check for no devices on 1-wire
+                if id_bit && cmp_id_bit {
+                    return Err(PortErrors::NoDevices);
                 }
 
-                loop {
-                    // read a bit and its complement
-                    let id_bit = self.request_bit();
-                    let cmp_id_bit = self.request_bit();
-
-                    // check for no devices on 1-wire
-                    if id_bit && cmp_id_bit {
-                        return Err(PortErrors::NoDevices);
-                    }
-
-                    let search_direction = if id_bit || cmp_id_bit {
-                        // id_bit != cmp_id_bit means
-                        // all devices coupled have 0 or 1
-                        id_bit
+                let search_direction = if id_bit || cmp_id_bit {
+                    // id_bit != cmp_id_bit means
+                    // all devices coupled have 0 or 1
+                    id_bit
+                } else {
+                    // if this discrepancy if before the Last Discrepancy
+                    // on a previous next then pick the same as last time
+                    let dir = if id_bit_number < it.last_discrepancy {
+                        (it.rom[id_byte_number] & id_byte_mask) != 0
                     } else {
-                        // if this discrepancy if before the Last Discrepancy
-                        // on a previous next then pick the same as last time
-                        let dir = if id_bit_number < it.last_discrepancy {
-                            (it.rom[id_byte_number] & id_byte_mask) != 0
-                        } else {
-                            id_bit_number == it.last_discrepancy
-                        };
-
-                        // if 0 was picked then record its position in LastZero
-                        if !dir {
-                            last_zero = id_bit_number;
-
-                            // check for Last discrepancy in family
-                            if last_zero < 9 {
-                                it.last_family_discrepancy = last_zero;
-                            }
-                        }
-
-                        dir
+                        id_bit_number == it.last_discrepancy
                     };
 
-                    // set or clear the bit in the ROM byte rom_byte_number
-                    // with mask rom_byte_mask
-                    if search_direction {
-                        it.rom[id_byte_number] |= id_byte_mask;
-                    } else {
-                        it.rom[id_byte_number] &= !id_byte_mask;
-                    }
-                    self.send_bit(search_direction);
+                    // if 0 was picked then record its position in LastZero
+                    if !dir {
+                        last_zero = id_bit_number;
 
-                    id_bit_number += 1;
-                    id_byte_mask <<= 1;
-                    if id_byte_mask == 0 {
-                        id_byte_number += 1;
-                        id_byte_mask = 1;
-                    }
-
-                    // loop until through all ROM bytes 0-7
-                    if id_byte_number >= 8 {
-                        it.last_discrepancy = last_zero;
-
-                        if it.last_discrepancy == 0 {
-                            it.last_device_flag = true;
+                        // check for Last discrepancy in family
+                        if last_zero < 9 {
+                            it.last_family_discrepancy = last_zero;
                         }
-
-                        if 0 != calculate_crc(&it.rom[..]) {
-                            return Err(PortErrors::CRCMismatch);
-                        }
-
-                        // if the search was successful then
-                        return Ok(Some(&it.rom));
                     }
+
+                    dir
+                };
+
+                // set or clear the bit in the ROM byte rom_byte_number
+                // with mask rom_byte_mask
+                if search_direction {
+                    it.rom[id_byte_number] |= id_byte_mask;
+                } else {
+                    it.rom[id_byte_number] &= !id_byte_mask;
+                }
+                self.send_bit(search_direction)?;
+
+                id_bit_number += 1;
+                id_byte_mask <<= 1;
+                if id_byte_mask == 0 {
+                    id_byte_number += 1;
+                    id_byte_mask = 1;
+                }
+
+                // loop until through all ROM bytes 0-7
+                if id_byte_number >= 8 {
+                    it.last_discrepancy = last_zero;
+
+                    if it.last_discrepancy == 0 {
+                        it.last_device_flag = true;
+                    }
+
+                    if 0 != calculate_crc(&it.rom[..]) {
+                        return Err(PortErrors::CRCMismatch);
+                    }
+
+                    // if the search was successful then
+                    return Ok(Some(&it.rom));
                 }
             }
         }

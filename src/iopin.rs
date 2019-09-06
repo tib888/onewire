@@ -3,7 +3,7 @@
 #![deny(unsafe_code)]
 #![deny(warnings)]
 
-use hal::digital::{InputPin, OutputPin};
+use hal::digital::v2::{InputPin, OutputPin};
 
 pub struct IOPin<OPIN, IPIN>
 where
@@ -16,28 +16,32 @@ where
 
 impl<OPIN, IPIN> InputPin for IOPin<OPIN, IPIN>
 where
-    OPIN: OutputPin,
     IPIN: InputPin,
+    OPIN: OutputPin,
 {
-    fn is_high(&self) -> bool {
+    type Error = IPIN::Error;
+
+    fn is_high(&self) -> Result<bool, Self::Error> {
         self.input.is_high()
     }
 
-    fn is_low(&self) -> bool {
+    fn is_low(&self) -> Result<bool, Self::Error> {
         self.input.is_low()
     }
 }
 
 impl<OPIN, IPIN> OutputPin for IOPin<OPIN, IPIN>
 where
-    OPIN: OutputPin,
     IPIN: InputPin,
+    OPIN: OutputPin,
 {
-    fn set_high(&mut self) {
-        self.output.set_high();
+    type Error = OPIN::Error;
+
+    fn set_high(&mut self) -> Result<(), Self::Error> {
+        self.output.set_high()
     }
 
-    fn set_low(&mut self) {
-        self.output.set_low();
+    fn set_low(&mut self) -> Result<(), Self::Error> {
+        self.output.set_low()
     }
 }

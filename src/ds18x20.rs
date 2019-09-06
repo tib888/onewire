@@ -3,10 +3,10 @@
 #![deny(unsafe_code)]
 //#![deny(warnings)]
 
-use calculate_crc;
-use temperature::Temperature;
-use OneWire;
-use PortErrors;
+use crate::calculate_crc;
+use crate::temperature::Temperature;
+use crate::OneWire;
+use crate::PortErrors;
 
 pub enum DS18x20Devices {
     DS18S20, // or old DS1820
@@ -39,14 +39,12 @@ impl<T: OneWire> DS18x20 for T {
     /// Measure the temperature with 18x20, returns temp in celsius * 16
     /// returs the time in ms required for conversion
     fn start_temperature_measurement(&mut self, rom: &[u8; 8]) -> Result<u16, PortErrors> {
-        if let Err(error) = self.reset() {
-            return Err(error);
-        }
+        self.reset()?;
 
-        self.select(&rom);
+        self.select(&rom)?;
 
         //start conversion
-        self.send_byte(0x44);
+        self.send_byte(0x44)?;
 
         //with parasite power ON
         //self.strong_pullup(true);
@@ -60,18 +58,14 @@ impl<T: OneWire> DS18x20 for T {
     ) -> Result<Temperature, PortErrors> {
         //with parasite power OFF
         //self.strong_pullup(false);
-
-        if let Err(err) = self.reset() {
-            return Err(err);
-        }
-
-        self.select(&rom);
+        self.reset()?;
+        self.select(&rom)?;
 
         // Read Scratchpad
-        self.send_byte(0xBE);
+        self.send_byte(0xBE)?;
 
         let mut scratchpad = [0u8; 9];
-        self.request_many(&mut scratchpad[..]);
+        self.request_many(&mut scratchpad[..])?;
 
         if calculate_crc(&scratchpad[..]) == 0 {
             let mut rawtemp: u16 = scratchpad[0] as u16 | ((scratchpad[1] as u16) << 8);
